@@ -18,8 +18,9 @@ class MacSerialNumber {
       return nil
     }
     
-    // Create _VZMacSerialNumber using Dynamic
-    let serial = Dynamic._VZMacSerialNumber(serialString)
+    // Create _VZMacSerialNumber using initWithString: class method
+    // The Dynamic library translates this to [[_VZMacSerialNumber alloc] initWithString:]
+    let serial = Dynamic._VZMacSerialNumber.initWithString(serialString)
     
     // Check if initialization succeeded (returns nil for invalid format)
     guard serial.asObject != nil else {
