@@ -20,13 +20,30 @@ struct Set: AsyncParsableCommand {
   @Flag(inversion: .prefixedNo, help: ArgumentHelp("Whether to automatically reconfigure the VM's display to fit the window"))
   var displayRefit: Bool? = nil
 
-  @Flag(help: ArgumentHelp("Generate a new random MAC address for the VM."))
-  var randomMAC: Bool = false
+  @Option(help: ArgumentHelp("Enable hardware-accelerated video encoding/decoding via VideoToolbox (macOS guests only). --video-toolbox=1 to enable, --video-toolbox=0 to disable."))
+  var videoToolbox: UInt8?
+
+  @Option(help: ArgumentHelp("Enable hardware-accelerated neural network inference via Apple Neural Engine (macOS guests only). --neural-engine=1 to enable, --neural-engine=0 to disable."))
+  var neuralEngine: UInt8?
+
+  @Option(help: ArgumentHelp("Allow signature mismatches for Neural Engine. --neural-engine-signature-mismatch-allowed=1 to enable, --neural-engine-signature-mismatch-allowed=0 to disable. Requires os_variant_has_internal_content(\"com.apple.virtualization\") == 1."))
+  var neuralEngineSignatureMismatchAllowed: UInt8?
+
+  @Option(help: ArgumentHelp("Enable hardware-accelerated image/video scaling via M2 Scaler (macOS guests on M2+ hosts only). --m2-scaler=1 to enable, --m2-scaler=0 to disable."))
+  var m2Scaler: UInt8?
+
+  @Option(help: ArgumentHelp("Generate a new random MAC address for the VM. --random-mac=1 to generate."))
+  var randomMAC: UInt8?
 
   #if arch(arm64)
-    @Flag(help: ArgumentHelp("Generate a new random serial number for the macOS VM."))
+    @Option(help: ArgumentHelp("Generate a new random serial number for the macOS VM. Use --random-serial=1 to generate."))
   #endif
-  var randomSerial: Bool = false
+  var randomSerial: UInt8?
+
+  #if arch(arm64)
+    @Option(help: ArgumentHelp("Set a custom serial number for the macOS VM (must be exactly 10 characters). Example: --serial-number=C02XL0ABHT"))
+  #endif
+  var serialNumber: String?
 
   @Option(help: ArgumentHelp("Replace the VM's disk contents with the disk contents at path.", valueName: "path"))
   var disk: String?
@@ -61,13 +78,51 @@ struct Set: AsyncParsableCommand {
 
     vmConfig.displayRefit = displayRefit
 
-    if randomMAC {
+    if let videoToolbox = videoToolbox {
+      vmConfig.videoToolbox = (videoToolbox == 1)
+    }
+
+    if let neuralEngine = neuralEngine {
+      vmConfig.neuralEngine = (neuralEngine == 1)
+    }
+
+    if let neuralEngineSignatureMismatchAllowed = neuralEngineSignatureMismatchAllowed {
+      vmConfig.neuralEngineSignatureMismatchAllowed = (neuralEngineSignatureMismatchAllowed == 1)
+    }
+
+    if let m2Scaler = m2Scaler {
+      vmConfig.m2Scaler = (m2Scaler == 1)
+    }
+
+    if let randomMAC = randomMAC, randomMAC == 1 {
       vmConfig.macAddress = VZMACAddress.randomLocallyAdministered()
     }
 
     #if arch(arm64)
-      if randomSerial, let oldPlatform = vmConfig.platform as? Darwin {
+      if let randomSerial = randomSerial, randomSerial == 1, let oldPlatform = vmConfig.platform as? Darwin {
         vmConfig.platform = Darwin(ecid: VZMacMachineIdentifier(), hardwareModel: oldPlatform.hardwareModel)
+      }
+
+      // Handle custom serial number
+      if let serialNumber = serialNumber {
+        // Validate serial number
+        guard let macSerialNumber = MacSerialNumber(serialString: serialNumber) else {
+          throw ValidationError("Invalid serial number '\(serialNumber)': must be exactly 10 characters and valid format")
+        }
+        
+        // Store the serial number in the config
+        vmConfig.serialNumber = serialNumber
+        
+        // Update the machine identifier with the custom serial number while preserving ECID
+        if let oldPlatform = vmConfig.platform as? Darwin {
+          guard let newMachineIdentifier = VZMacMachineIdentifier.create(
+            withSerialNumber: macSerialNumber,
+            ecid: oldPlatform.ecid.ecid  // Extract UInt64 ECID from the machine identifier
+          ) else {
+            throw ValidationError("Failed to create machine identifier with serial number '\(serialNumber)'")
+          }
+          vmConfig.platform = Darwin(ecid: newMachineIdentifier, hardwareModel: oldPlatform.hardwareModel)
+        }
       }
     #endif
 

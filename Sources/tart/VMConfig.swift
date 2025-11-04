@@ -26,6 +26,12 @@ enum CodingKeys: String, CodingKey {
   case display
   case displayRefit
   case diskFormat
+  case debugPort
+  case videoToolbox
+  case neuralEngine
+  case neuralEngineSignatureMismatchAllowed
+  case m2Scaler
+  case serialNumber
 
   // macOS-specific keys
   case ecid
@@ -66,6 +72,12 @@ struct VMConfig: Codable {
   var display: VMDisplayConfig = VMDisplayConfig()
   var displayRefit: Bool?
   var diskFormat: DiskImageFormat = .raw
+  var debugPort: Int = 1234
+  var videoToolbox: Bool = false
+  var neuralEngine: Bool = false
+  var neuralEngineSignatureMismatchAllowed: Bool = false
+  var m2Scaler: Bool = false
+  var serialNumber: String?
 
   init(
     platform: Platform,
@@ -140,6 +152,12 @@ struct VMConfig: Codable {
     displayRefit = try container.decodeIfPresent(Bool.self, forKey: .displayRefit)
     let diskFormatString = try container.decodeIfPresent(String.self, forKey: .diskFormat) ?? "raw"
     diskFormat = DiskImageFormat(rawValue: diskFormatString) ?? .raw
+    debugPort = try container.decode(Int.self, forKey: .debugPort)
+    videoToolbox = try container.decodeIfPresent(Bool.self, forKey: .videoToolbox) ?? false
+    neuralEngine = try container.decodeIfPresent(Bool.self, forKey: .neuralEngine) ?? false
+    neuralEngineSignatureMismatchAllowed = try container.decodeIfPresent(Bool.self, forKey: .neuralEngineSignatureMismatchAllowed) ?? false
+    m2Scaler = try container.decodeIfPresent(Bool.self, forKey: .m2Scaler) ?? false
+    serialNumber = try container.decodeIfPresent(String.self, forKey: .serialNumber)
   }
 
   func encode(to encoder: Encoder) throws {
@@ -159,6 +177,14 @@ struct VMConfig: Codable {
       try container.encode(displayRefit, forKey: .displayRefit)
     }
     try container.encode(diskFormat.rawValue, forKey: .diskFormat)
+    try container.encode(debugPort, forKey: .debugPort)
+    try container.encode(videoToolbox, forKey: .videoToolbox)
+    try container.encode(neuralEngine, forKey: .neuralEngine)
+    try container.encode(neuralEngineSignatureMismatchAllowed, forKey: .neuralEngineSignatureMismatchAllowed)
+    try container.encode(m2Scaler, forKey: .m2Scaler)
+    if let serialNumber = serialNumber {
+      try container.encode(serialNumber, forKey: .serialNumber)
+    }
   }
 
   mutating func setCPU(cpuCount: Int) throws {

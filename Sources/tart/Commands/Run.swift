@@ -101,6 +101,33 @@ struct Run: AsyncParsableCommand {
   var recovery: Bool = false
 
   #if arch(arm64)
+    @Flag(help: "Boot into DFU mode")
+  #endif
+  var dfu: Bool = false
+
+  #if arch(arm64)
+    @Flag(help: ArgumentHelp(
+      "Halt on fatal error",
+      discussion: "Requires macOS 14 (Sonoma) or newer. By default, Tart will try to recover from fatal errors by restarting the VM."))
+  #endif
+  var haltOnFatalError: Bool = false
+
+  #if arch(arm64)
+    @Flag(help: "Halt on panic")
+  #endif
+  var haltOnPanic: Bool = false
+
+  #if arch(arm64)
+    @Flag(help: "Halt on iBoot Stage 1")
+  #endif
+  var haltOnIbootStage1: Bool = false
+
+  #if arch(arm64)
+    @Flag(help: "Halt on iBoot Stage 2")
+  #endif
+  var haltOnIbootStage2: Bool = false
+
+  #if arch(arm64)
     @Flag(help: ArgumentHelp(
       "Use screen sharing instead of the built-in UI.",
       discussion: "Useful since Screen Sharing supports copy/paste, drag and drop, etc.\n"
@@ -473,7 +500,16 @@ struct Run: AsyncParsableCommand {
         #endif
 
         do {
-          try await vm!.start(recovery: recovery, resume: resume)
+          let startOptions = VMStartOptions(
+            startUpFromMacOSRecovery: recovery,
+            forceDFU: dfu,
+            haltOnFatalError: haltOnFatalError,
+            haltOnPanic: haltOnPanic,
+            haltOnIbootStage1: haltOnIbootStage1,
+            haltOnIbootStage2: haltOnIbootStage2
+          )
+
+          try await vm!.start(vmStartOptions: startOptions, resume: resume)
         } catch let error as VZError {
           if error.code == .virtualMachineLimitExceeded {
             var hint = ""

@@ -1,6 +1,7 @@
 import Foundation
 import Virtualization
 import Semaphore
+import Dynamic
 
 struct UnsupportedRestoreImageError: Error {
 }
@@ -65,7 +66,7 @@ class VM: NSObject, VZVirtualMachineDelegate, ObservableObject {
     // Initialize the virtual machine and its configuration
     self.network = network
     configuration = try Self.craftConfiguration(diskURL: vmDir.diskURL,
-                                                nvramURL: vmDir.nvramURL, vmConfig: config,
+                                                nvramURL: vmDir.nvramURL, romURL: vmDir.romURL, vmConfig: config,
                                                 network: network, additionalStorageDevices: additionalStorageDevices,
                                                 directorySharingDevices: directorySharingDevices,
                                                 serialPorts: serialPorts,
@@ -147,6 +148,7 @@ class VM: NSObject, VZVirtualMachineDelegate, ObservableObject {
       vmDir: VMDirectory,
       ipswURL: URL,
       diskSizeGB: UInt16,
+      romURL: URL,
       diskFormat: DiskImageFormat = .raw,
       network: Network = NetworkShared(),
       additionalStorageDevices: [VZStorageDeviceConfiguration] = [],
@@ -194,9 +196,12 @@ class VM: NSObject, VZVirtualMachineDelegate, ObservableObject {
       try config.setCPU(cpuCount: max(4, requirements.minimumSupportedCPUCount))
       try config.save(toURL: vmDir.configURL)
 
+      // Copy ROM image
+      try FileManager.default.copyItem(atPath: romURL.path, toPath: vmDir.romURL.path)
+
       // Initialize the virtual machine and its configuration
       self.network = network
-      configuration = try Self.craftConfiguration(diskURL: vmDir.diskURL, nvramURL: vmDir.nvramURL,
+      configuration = try Self.craftConfiguration(diskURL: vmDir.diskURL, nvramURL: vmDir.nvramURL, romURL: vmDir.romURL,
                                                   vmConfig: config, network: network,
                                                   additionalStorageDevices: additionalStorageDevices,
                                                   directorySharingDevices: directorySharingDevices,
@@ -244,13 +249,13 @@ class VM: NSObject, VZVirtualMachineDelegate, ObservableObject {
     return try VM(vmDir: vmDir)
   }
 
-  func start(recovery: Bool, resume shouldResume: Bool) async throws {
+  func start(vmStartOptions: VMStartOptions, resume shouldResume: Bool) async throws {
     try network.run(sema)
 
     if shouldResume {
       try await resume()
     } else {
-      try await start(recovery)
+      try await start(vmStartOptions)
     }
   }
 
@@ -286,13 +291,22 @@ class VM: NSObject, VZVirtualMachineDelegate, ObservableObject {
   }
 
   @MainActor
-  private func start(_ recovery: Bool) async throws {
+  private func start(_ vmStartOptions: VMStartOptions) async throws {
     #if arch(arm64)
+      // Set panic and fatal error actions on the configuration
+      // (these moved from VZMacOSVirtualMachineStartOptions to VZVirtualMachineConfiguration)
+      Dynamic(configuration)._setPanicAction(vmStartOptions.haltOnPanic)
+      Dynamic(configuration)._setFatalErrorAction(vmStartOptions.haltOnFatalError)
+      
       let startOptions = VZMacOSVirtualMachineStartOptions()
-      startOptions.startUpFromMacOSRecovery = recovery
+      startOptions.startUpFromMacOSRecovery = vmStartOptions.startUpFromMacOSRecovery
+      Dynamic(startOptions)._setForceDFU(vmStartOptions.forceDFU)
+      Dynamic(startOptions)._setStopInIBootStage1(vmStartOptions.haltOnIbootStage1)
+      Dynamic(startOptions)._setStopInIBootStage2(vmStartOptions.haltOnIbootStage2)
+
       try await virtualMachine.start(options: startOptions)
     #else
-      try await virtualMachine.start()
+      try await virtualMachine.start(vmStartOptions.startUpFromMacOSRecovery)
     #endif
   }
 
@@ -309,6 +323,7 @@ class VM: NSObject, VZVirtualMachineDelegate, ObservableObject {
   static func craftConfiguration(
     diskURL: URL,
     nvramURL: URL,
+    romURL: URL,
     vmConfig: VMConfig,
     network: Network = NetworkShared(),
     additionalStorageDevices: [VZStorageDeviceConfiguration],
@@ -327,7 +342,9 @@ class VM: NSObject, VZVirtualMachineDelegate, ObservableObject {
     let configuration = VZVirtualMachineConfiguration()
 
     // Boot loader
-    configuration.bootLoader = try vmConfig.platform.bootLoader(nvramURL: nvramURL)
+    let bootloader = try vmConfig.platform.bootLoader(nvramURL: nvramURL)
+    Dynamic(bootloader)._setROMURL(romURL)
+    configuration.bootLoader = bootloader
 
     // CPU and memory
     configuration.cpuCount = vmConfig.cpuCount
@@ -421,8 +438,21 @@ class VM: NSObject, VZVirtualMachineDelegate, ObservableObject {
     // Directory sharing devices
     configuration.directorySharingDevices = directorySharingDevices
 
+    // Debug stub
+    let debugStub = Dynamic._VZGDBDebugStubConfiguration(port: vmConfig.debugPort)
+    Dynamic(configuration)._setDebugStub(debugStub)
+
     // Serial Port
-    configuration.serialPorts = serialPorts
+    if serialPorts.isEmpty {
+      let serialPort: VZSerialPortConfiguration = Dynamic._VZPL011SerialPortConfiguration().asObject as! VZSerialPortConfiguration
+      serialPort.attachment = VZFileHandleSerialPortAttachment(
+        fileHandleForReading: FileHandle.standardInput,
+        fileHandleForWriting: FileHandle.standardOutput
+      )
+      configuration.serialPorts = [serialPort]
+    } else {
+      configuration.serialPorts = serialPorts
+    }
 
     // Version console device
     //
@@ -436,8 +466,38 @@ class VM: NSObject, VZVirtualMachineDelegate, ObservableObject {
 
     configuration.consoleDevices.append(consoleDevice)
 
+    // Panic device
+    let panicDevice = Dynamic._VZPvPanicDeviceConfiguration()
+    Dynamic(configuration)._setPanicDevice(panicDevice)
+
     // Socket device
     configuration.socketDevices = [VZVirtioSocketDeviceConfiguration()]
+
+    // VideoToolbox accelerator device (macOS only)
+    #if arch(arm64)
+    if vmConfig.videoToolbox && vmConfig.os == .darwin {
+      if !VideoToolboxConfiguration.addToConfiguration(configuration) {
+        print("warning: VideoToolbox acceleration is not supported on this platform")
+      }
+    }
+    
+    // Neural Engine accelerator device (macOS only)
+    if vmConfig.neuralEngine && vmConfig.os == .darwin {
+      if !NeuralEngineConfiguration.addToConfiguration(
+        configuration,
+        signatureMismatchAllowed: vmConfig.neuralEngineSignatureMismatchAllowed
+      ) {
+        print("warning: Neural Engine acceleration could not be configured")
+      }
+    }
+    
+    // M2 Scaler accelerator device (macOS only, M2+ hosts)
+    if vmConfig.m2Scaler && vmConfig.os == .darwin {
+      if !M2ScalerConfiguration.addToConfiguration(configuration) {
+        print("warning: M2 Scaler acceleration could not be configured (requires M2+ host)")
+      }
+    }
+    #endif
 
     try configuration.validate()
 

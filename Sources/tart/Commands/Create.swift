@@ -22,6 +22,11 @@ struct Create: AsyncParsableCommand {
   @Option(help: ArgumentHelp("Disk image format", discussion: "ASIF format provides better performance but requires macOS 26 Tahoe or later"))
   var diskFormat: DiskImageFormat = .raw
 
+  @Option(help: ArgumentHelp("Path to the custom AVPBooter ROM image"))
+  var romURL: String = "/System/Library/Frameworks/Virtualization.framework/Versions/A/Resources/AVPBooter.vmapple2.bin";
+
+
+
   func validate() throws {
     if fromIPSW == nil && !linux {
       throw ValidationError("Please specify either a --from-ipsw or --linux option!")
@@ -66,7 +71,10 @@ struct Create: AsyncParsableCommand {
             ipswURL = URL(fileURLWithPath: NSString(string: fromIPSW).expandingTildeInPath)
           }
 
-          _ = try await VM(vmDir: tmpVMDir, ipswURL: ipswURL, diskSizeGB: diskSize, diskFormat: diskFormat)
+          let romURL = URL(fileURLWithPath: romURL)
+          print("Using ROM image at \(romURL)")
+
+          _ = try await VM(vmDir: tmpVMDir, ipswURL: ipswURL, diskSizeGB: diskSize, romURL: romURL, diskFormat: diskFormat)
         }
       #endif
 
