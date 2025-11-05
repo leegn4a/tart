@@ -29,8 +29,11 @@ struct Set: AsyncParsableCommand {
   @Option(help: ArgumentHelp("Allow signature mismatches for Neural Engine. --neural-engine-signature-mismatch-allowed=1 to enable, --neural-engine-signature-mismatch-allowed=0 to disable. Requires os_variant_has_internal_content(\"com.apple.virtualization\") == 1."))
   var neuralEngineSignatureMismatchAllowed: UInt8?
 
-  @Option(help: ArgumentHelp("Enable hardware-accelerated image/video scaling via M2 Scaler (macOS guests on M2+ hosts only). --m2-scaler=1 to enable, --m2-scaler=0 to disable."))
+  @Option(help: ArgumentHelp("Enable hardware-accelerated image/video scaling via M2Scaler (macOS guests only). --m2-scaler=1 to enable, --m2-scaler=0 to disable."))
   var m2Scaler: UInt8?
+
+  @Option(help: ArgumentHelp("Set the GDB debug stub port (default: 1234). Example: --debug-port=8000"))
+  var debugPort: UInt16?
 
   @Option(help: ArgumentHelp("Generate a new random MAC address for the VM. --random-mac=1 to generate."))
   var randomMAC: UInt8?
@@ -92,6 +95,10 @@ struct Set: AsyncParsableCommand {
 
     if let m2Scaler = m2Scaler {
       vmConfig.m2Scaler = (m2Scaler == 1)
+    }
+
+    if let debugPort = debugPort {
+      vmConfig.debugPort = Int(debugPort)
     }
 
     if let randomMAC = randomMAC, randomMAC == 1 {
