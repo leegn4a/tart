@@ -40,7 +40,7 @@ task:
   name: Lint
   alias: lint
   macos_instance:
-    image: ghcr.io/cirruslabs/macos-runner:sequoia
+    image: ghcr.io/cirruslabs/macos-runner:tahoe
   lint_script:
     - swift package plugin --allow-writing-to-package-directory swiftformat --cache ignore --lint --report swiftformat.json .
   always:
@@ -57,7 +57,7 @@ task:
   name: Build ($BUILD_ARCH)
   alias: build
   macos_instance:
-    image: ghcr.io/cirruslabs/macos-runner:sequoia
+    image: ghcr.io/cirruslabs/macos-runner:tahoe
   build_script: swift build --arch $BUILD_ARCH --product tart
   sign_script: codesign --sign - --entitlements Resources/tart-dev.entitlements --force .build/$BUILD_ARCH-apple-macosx/debug/tart
   binary_artifacts:
@@ -70,7 +70,7 @@ task:
     - lint
     - build
   macos_instance:
-    image: ghcr.io/cirruslabs/macos-runner:sequoia
+    image: ghcr.io/cirruslabs/macos-runner:tahoe
   env:
     MACOS_CERTIFICATE: ENCRYPTED[552b9d275d1c2bdbc1bff778b104a8f9a53cbd0d59344d4b7f6d0ca3c811a5cefb97bef9ba0ef31c219cb07bdacdd2c2]
     AC_PASSWORD: ENCRYPTED[4a761023e7e06fe2eb350c8b6e8e7ca961af193cb9ba47605f25f1d353abc3142606f412e405be48fd897a78787ea8c2]
@@ -103,10 +103,9 @@ task:
   only_if: $CIRRUS_TAG != ''
   depends_on:
     - lint
-    - test
     - build
   macos_instance:
-    image: ghcr.io/cirruslabs/macos-runner:sequoia
+    image: ghcr.io/cirruslabs/macos-runner:tahoe
   env:
     MACOS_CERTIFICATE: ENCRYPTED[552b9d275d1c2bdbc1bff778b104a8f9a53cbd0d59344d4b7f6d0ca3c811a5cefb97bef9ba0ef31c219cb07bdacdd2c2]
     AC_PASSWORD: ENCRYPTED[4a761023e7e06fe2eb350c8b6e8e7ca961af193cb9ba47605f25f1d353abc3142606f412e405be48fd897a78787ea8c2]
@@ -153,7 +152,7 @@ task:
   name: Deploy Documentation
   only_if: $CIRRUS_BRANCH == 'main'
   container:
-    image: ghcr.io/cirruslabs/mkdocs-material-insiders:latest
+    image: ghcr.io/squidfunk/mkdocs-material:latest
     registry_config: ENCRYPTED[!cf1a0f25325aa75bad3ce6ebc890bc53eb0044c02efa70d8cefb83ba9766275a994b4831706c52630a0692b2fa9cfb9e!]
   env:
     DEPLOY_TOKEN: ENCRYPTED[!45ed45666558902ed1c2400add734ec063103bec31841847e8c8764802fca229bfa6d85c690e16ad159e047574b48793!]

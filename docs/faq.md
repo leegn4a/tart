@@ -59,7 +59,7 @@ Remote images are pulled into `~/.tart/cache/OCIs/`.
 ## Nested virtualization support?
 
 Tart is limited by functionality of Apple's `Virtualization.Framework`. At the moment `Virtualization.Framework`
-supports nested virtualization only on M3 or M4 chips running macOS 15 (Sequoia). By default, it is disabled, but can be enabled by passing the `--nested` flag to `tart run`.
+supports nested virtualization only on M3 or M4 chips running macOS 15 (Sequoia) or later. By default, it is disabled, but can be enabled by passing the `--nested` flag to `tart run`.
 
 ## Connecting to a service running on host
 
@@ -76,6 +76,21 @@ netstat -nr | awk '/default/{print $2; exit}'
 Note: that accessing host is only possible with the default NAT network. If you are running your virtual machines with
 [Softnet](https://github.com/cirruslabs/softnet) (via `tart run --net-softnet <VM NAME>)`, then the network isolation
 is stricter and it's not possible to access the host.
+
+## Avoiding the "Local Network" permission pop-up
+
+Starting from macOS 15 (Sequoia), a GUI "Local Network" permission pop-up might appear when Tart is used by another tool that needs to connect to a VM over a private IPv4 network, for example [Packer](https://developer.hashicorp.com/packer/integrations/cirruslabs/tart/latest/components/builder/tart).
+
+This is not caused by Tart itself, but by the host-side process that needs network access into the guest.
+
+If you need a non-interactive workaround, you can configure the [local network privacy preferences](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy#macOS-considerations) on the host so that all [RFC 1918](https://datatracker.ietf.org/doc/html/rfc1918#section-3) address ranges that Tart VMs commonly use are excluded from the prompt:
+
+```shell
+sudo defaults write com.apple.network.local-network AllowedEthernetLocalNetworkAddresses -array "10.0.0.0/8" "172.16.0.0/12" "192.168.0.0/16"
+sudo defaults write com.apple.network.local-network AllowedWiFiLocalNetworkAddresses -array "10.0.0.0/8" "172.16.0.0/12" "192.168.0.0/16"
+```
+
+After applying these settings, reboot the host.
 
 ## Changing the default NAT subnet
 
@@ -184,7 +199,7 @@ security unlock-keychain login.keychain
 
 This command also supports the `-p` command-line argument that allows you to supply a password and unlock non-interactively, which is great for scripts.
 
-Alternatively, you can pass the credentials via the environment variables, see [Registry Authorization](integrations/vm-management.md#registry-authorization) for more details on how to do that.
+Alternatively, you can pass the credentials via the environment variables, see [Registry Authorization](quick-start.md#registry-authorization) for more details on how to do that.
 
 ## How is Tart different from Anka?
 
